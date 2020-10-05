@@ -6,6 +6,7 @@
 # packages
 import chess.pgn        # pip install python-chess
 import json
+from heatmaps import heatmaps
 
 # PGN data extractor
 class DataExtractor():
@@ -14,11 +15,13 @@ class DataExtractor():
 
     # PGN file list to process
     pgn_files = [
-        './pgn/test.pgn',
-        './pgn/CCRL-20-03.pgn',
-        './pgn/CCRL-20-04.pgn',
-        './pgn/CCRL-20-05.pgn',
+        './pgn/CCRL-2020-03.pgn',
+        './pgn/CCRL-2020-04.pgn',
+        './pgn/CCRL-2020-05.pgn',
     ]
+    
+    # game count
+    game_count = 0
     
     # opening phase score
     opening_phase_score = 28
@@ -27,37 +30,7 @@ class DataExtractor():
     endgame_phase_score = 15
     
     # heatmaps
-    heatmaps = {
-        'opening': {
-            'P': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'N': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'B': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'R': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'Q': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'K': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'p': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'n': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'b': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'r': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'q': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'k': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-        },
-        
-        'endgame': {
-            'P': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'N': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'B': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'R': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'Q': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'K': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'p': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'n': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'b': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'r': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'q': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-            'k': [{'win': 0, 'loss': 0, 'draw': 0}] * 64,
-        }
-    }
+    heatmaps = heatmaps
     
     # get game phase
     def get_game_phase(self, pieces):
@@ -102,24 +75,36 @@ class DataExtractor():
         return pieces
     
     # update square stats
-    def update_square_stats(self, board, piece_count, headers):
+    def update_square_stats(self, move, board, piece_count, headers):
+        # take move back
+        board.pop()
+        
+        # skip captures
+        if board.piece_at(move.to_square) is not None:
+            # restore move
+            board.push(move)
+            return
+        
+        # restore move
+        board.push(move)
+        
         # get game phase
         game_phase = piece_count['game_phase']
         
         # update squares only for opening end endgame phases
         if game_phase != 'middlegame':
             # loop over board squares
-            for square in range(0, 64):
-                # pick up square containing piece
-                if board.piece_at(square):
-                    # extract piece type
+            for square in range(0, 63):
+                # found piece
+                if (board.piece_at(square)):
+                    # extract piece
                     piece = str(board.piece_at(square))
                     
                     # on win
                     if headers['Result'] == '1-0':
                         self.heatmaps[game_phase][piece][square]['win'] += 1
                     
-                    # on lose
+                    # on loss
                     elif headers['Result'] == '0-1':
                         self.heatmaps[game_phase][piece][square]['loss'] += 1
                     
@@ -128,13 +113,20 @@ class DataExtractor():
                         self.heatmaps[game_phase][piece][square]['draw'] += 1
             
     # process PGN games
-    def process_games(self, pgn):
+    def process_games(self, pgn):        
         # open PGN game
         with open(pgn) as f:
             # get current game
             current_game = chess.pgn.read_game(f)
             
             while current_game :
+                # export piece weights every 100 games
+                if (self.game_count % 100 == 0): self.export_heatmaps()
+
+                # increment game count
+                self.game_count += 1
+                print('processing game %d' % self.game_count)
+        
                 # process moves
                 self.process_moves(current_game)
                 
@@ -155,29 +147,35 @@ class DataExtractor():
             piece_count = self.count_pieces(board.fen(), game.headers)
             
             # update square stats
-            self.update_square_stats(board, piece_count, game.headers)
+            self.update_square_stats(move, board, piece_count, game.headers)
             
             # store piece count
-            with open('pieces.json', 'a') as f:
+            with open('./json/pieces.json', 'a') as f:
                 f.write(json.dumps(piece_count) + '\n')
     
     # export heatmaps to JSON
     def export_heatmaps(self):
         # store heatmaps
-        with open('heatmaps.json', 'w') as f:
+        with open('./json/heatmaps.json', 'w') as f:
             f.write(json.dumps(self.heatmaps, indent=2))
 
     # extract data
     def run(self):
         # create output file
-        with open('pieces.json', 'w') as f: f.write('')
+        with open('./json/pieces.json', 'w') as f: f.write('')
         
-        # process PGN
-        self.process_games('./pgn/test.pgn')
+        # loop over PGNs
+        for pgn in self.pgn_files:
+            # process PGN
+            self.process_games(pgn)
         
         # export heatmaps
         self.export_heatmaps()
+        
+        print('\nTotal games processed: %d' % self.game_count)
 
 # main driver
-data_extractor = DataExtractor()
-data_extractor.run()
+if __name__ == '__main__':
+    data_extractor = DataExtractor()
+    data_extractor.run()
+
